@@ -122,11 +122,16 @@ export function applySwap(positionMap: number[], move: SwapMove): number[] {
   return next
 }
 
-export function resolveStonePosition(initialStoneCup: number, moves: SwapMove[]): number {
+export function resolveCupSlots(moves: SwapMove[]): number[] {
   let positionMap = [0, 1, 2]
   for (const move of moves) {
     positionMap = applySwap(positionMap, move)
   }
+  return positionMap
+}
+
+export function resolveStonePosition(initialStoneCup: number, moves: SwapMove[]): number {
+  const positionMap = resolveCupSlots(moves)
   return positionMap.indexOf(initialStoneCup)
 }
 

@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { gsap } from 'gsap'
 import * as THREE from 'three'
-import type { SwapMove } from '../lib/game'
+import { resolveCupSlots, type SwapMove } from '../lib/game'
 
 type ScenePhase = 'idle' | 'reveal' | 'shuffle' | 'guess' | 'result'
 
@@ -20,6 +20,10 @@ type ThreeCupSceneProps = {
 const CUP_X = [-1.72, 0, 1.72]
 const CUP_Y = 0.8
 const CUP_RADIUS = 0.54
+
+function nearestCupSlot(x: number) {
+  return CUP_X.reduce((closest, cupX, index) => (Math.abs(cupX - x) < Math.abs(CUP_X[closest] - x) ? index : closest), 0)
+}
 
 export function ThreeCupScene({
   phase,
@@ -43,6 +47,7 @@ export function ThreeCupScene({
   const onShuffleCompleteRef = useRef(onShuffleComplete)
   const onCupSelectRef = useRef(onCupSelect)
   const phaseRef = useRef(phase)
+  const finalCupSlots = useMemo(() => resolveCupSlots(moves), [moves])
 
   useEffect(() => {
     onShuffleCompleteRef.current = onShuffleComplete
@@ -171,8 +176,21 @@ export function ThreeCupScene({
       pointerRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
       raycasterRef.current.setFromCamera(pointerRef.current, camera)
       const hits = raycasterRef.current.intersectObjects(cupsRef.current, true)
-      const hit = hits.find((item) => typeof item.object.userData.cupIndex === 'number')
-      if (hit) onCupSelectRef.current(hit.object.userData.cupIndex)
+      const hit = hits.find((item) => {
+        let object: THREE.Object3D | null = item.object
+        while (object) {
+          if (cupsRef.current.includes(object as THREE.Group)) return true
+          object = object.parent
+        }
+        return false
+      })
+      if (!hit) return
+
+      let cupGroup: THREE.Object3D | null = hit.object
+      while (cupGroup && !cupsRef.current.includes(cupGroup as THREE.Group)) {
+        cupGroup = cupGroup.parent
+      }
+      if (cupGroup) onCupSelectRef.current(nearestCupSlot(cupGroup.position.x))
     }
 
     resize()
@@ -202,10 +220,10 @@ export function ThreeCupScene({
 
   useEffect(() => {
     if (stoneRef.current) {
-      stoneRef.current.position.x = CUP_X[stonePosition]
+      stoneRef.current.position.x = CUP_X[phase === 'result' ? correctCup : stonePosition]
       stoneRef.current.visible = phase === 'idle' || phase === 'reveal' || phase === 'result'
     }
-  }, [phase, stonePosition])
+  }, [correctCup, phase, stonePosition])
 
   useEffect(() => {
     timelineRef.current?.kill()
@@ -213,6 +231,7 @@ export function ThreeCupScene({
     if (!cups.length) return
     const tl = gsap.timeline()
     timelineRef.current = tl
+    const cupAtSlot = (slot: number) => cups[finalCupSlots[slot]] ?? cups[slot]
 
     if (phase === 'idle') {
       cups.forEach((cup, index) => {
@@ -248,24 +267,29 @@ export function ThreeCupScene({
     }
 
     if (phase === 'guess') {
-      cups.forEach((cup, index) => {
-        const shouldPeek = revealEmptyCup === index
+      finalCupSlots.forEach((cupIndex, slot) => {
+        const cup = cups[cupIndex]
+        if (!cup) return
+        const shouldPeek = revealEmptyCup === slot
+        gsap.set(cup.position, { x: CUP_X[slot], z: 0 })
         tl.to(cup.position, { y: CUP_Y + (shouldPeek ? 0.7 : 0), duration: 0.3, ease: 'power2.out' }, 0)
       })
     }
 
     if (phase === 'result') {
-      cups.forEach((cup, index) => {
-        const shouldLift = index === correctCup || index === selectedCup
+      CUP_X.forEach((_, slot) => {
+        const cup = cupAtSlot(slot)
+        const shouldLift = slot === correctCup || slot === selectedCup
+        gsap.set(cup.position, { x: CUP_X[slot], z: 0 })
         tl.to(cup.position, { y: CUP_Y + (shouldLift ? 1.32 : 0), duration: 0.45, ease: 'back.out(1.7)' }, 0)
-        tl.to(cup.rotation, { z: shouldLift ? (index === correctCup ? -0.18 : 0.18) : 0, duration: 0.45 }, 0)
+        tl.to(cup.rotation, { z: shouldLift ? (slot === correctCup ? -0.18 : 0.18) : 0, duration: 0.45 }, 0)
       })
     }
 
     return () => {
       tl.kill()
     }
-  }, [correctCup, moves, phase, revealEmptyCup, selectedCup, shuffleDuration, stonePosition])
+  }, [correctCup, finalCupSlots, moves, phase, revealEmptyCup, selectedCup, shuffleDuration, stonePosition])
 
   return <div className="three-scene" ref={hostRef} aria-label="3D cup shuffle game board" />
 }

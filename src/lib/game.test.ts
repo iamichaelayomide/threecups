@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applySwap, createShuffleSequence, getRoundConfig, recordRound, resolveStonePosition, spendBooster, defaultProgress } from './game'
+import { applySwap, createShuffleSequence, getRoundConfig, recordRound, resolveCupSlots, resolveStonePosition, spendBooster, defaultProgress } from './game'
 
 describe('cup chase game logic', () => {
   it('keeps exactly one stone position after a shuffle', () => {
@@ -11,6 +11,16 @@ describe('cup chase game logic', () => {
   it('updates cup positions through swaps', () => {
     expect(applySwap([0, 1, 2], { a: 0, b: 2 })).toEqual([2, 1, 0])
     expect(applySwap([2, 1, 0], { a: 1, b: 2 })).toEqual([2, 0, 1])
+  })
+
+  it('resolves the final slot map used by gameplay and the 3D scene', () => {
+    const moves = [
+      { a: 0, b: 2 },
+      { a: 1, b: 2 },
+    ]
+
+    expect(resolveCupSlots(moves)).toEqual([2, 0, 1])
+    expect(resolveStonePosition(1, moves)).toBe(2)
   })
 
   it('increases level difficulty predictably', () => {
